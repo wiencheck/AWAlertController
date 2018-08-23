@@ -7,6 +7,7 @@
 //
 
 // swiftlint:disable switch_default_case
+// swiftlint:disable line_length
 
 import UIKit
 
@@ -20,7 +21,7 @@ class GreatAlertController: UIViewController {
     }
 
     public enum AlertButtonStyle {
-        /// Choosing this will perform action chosen by user
+        /// Choosing this will perform action provided in [actions]
         case `default`
         /// Choosing this will take the selected row and perform confirmHandler(index:)
         case confirm
@@ -30,16 +31,9 @@ class GreatAlertController: UIViewController {
         case destructive
     }
 
-    typealias ButtonAction = (title: String?, action: (() -> Void)?, style: AlertButtonStyle)
+    typealias AlertAction = (title: String?, action: (() -> Void)?, style: AlertButtonStyle)
 
     static let nibName = "GreatAlertController"
-
-    let contentType: AlertContent
-    /// 
-    var highlightedRow: Int?
-    var messageTitle: String?
-    var messageBody: String?
-    var contentHeight: CGFloat = 0
 
     @IBOutlet weak var toolbar: UIToolbar!
     @IBOutlet weak var alertView: UIView!
@@ -48,19 +42,29 @@ class GreatAlertController: UIViewController {
     @IBOutlet weak var titleLabel: UILabel!
     @IBOutlet weak var messageLabel: UILabel!
 
-    var addedView: UIView?
+    let contentType: AlertContent
+    /// If set, pickerview/tableview will scroll to this row and highlight it.
+    var highlightedRow: Int?
+    /// Message displayed at the top of the alert
+    var messageTitle: String?
+    /// Message displayed under title
+    var messageBody: String?
+
+    private var contentHeight: CGFloat = 0
+
+    private var addedView: UIView?
     var data: [String]?
     var image: UIImage?
 
-    var actions: [ButtonAction]?
+    var actions: [AlertAction]?
     var buttons: [UIButton]?
-    var onConfirmSelect: ((Int) -> Void)?
-    var onDestructSelect: (() -> Void)?
+    var confirmHandler: ((Int) -> Void)?
+    var destructiveHandler: (() -> Void)?
 
     private let animator = DarkAnimator()
 
-    /// Message
-    init(title: String?, message: String?, actions: [ButtonAction]?) {
+    /// Initialize with message only.
+    init(title: String?, message: String?, actions: [AlertAction]?) {
         contentType = .message
         messageTitle = title
         messageBody = message
@@ -68,8 +72,8 @@ class GreatAlertController: UIViewController {
         super.init(nibName: GreatAlertController.nibName, bundle: nil)
     }
 
-    /// Table & Picker
-    init(title: String?, message: String?, actions: [ButtonAction]?, data: [String]?, style: AlertContent) {
+    /// Initialize with content view of table or picker style
+    init(title: String?, message: String?, actions: [AlertAction]?, data: [String]?, style: AlertContent) {
         contentType = style
         messageTitle = title
         messageBody = message
@@ -78,8 +82,8 @@ class GreatAlertController: UIViewController {
         super.init(nibName: GreatAlertController.nibName, bundle: nil)
     }
 
-    /// Image
-    init(title: String?, message: String?, actions: [ButtonAction]?, image: UIImage?) {
+    /// Initialize with image as alert's content
+    init(title: String?, message: String?, actions: [AlertAction]?, image: UIImage?) {
         contentType = .image
         messageTitle = title
         messageBody = message
@@ -134,7 +138,7 @@ class GreatAlertController: UIViewController {
         }
     }
 
-    func setContent() {
+    private func setContent() {
         switch contentType {
         case .table:
             addedView = UITableView(frame: .zero)
@@ -169,20 +173,19 @@ class GreatAlertController: UIViewController {
         added.pinToSuperviewEdges()
     }
 
-    func setLabels() {
+    private func setLabels() {
         titleLabel.text = messageTitle
         messageLabel.text = messageBody
     }
 
-    func setButtons() {
+    private func setButtons() {
         buttons = []
         if let actions = actions {
             actions.forEach { action in
                 let newButton = UIButton(type: .system)
-                newButton.setTitle(action.title, for: .normal)
-                let color: UIColor
-                color = action.style == .destructive ? .red : GreatAlertController.buttonColor
-                newButton.setTitleColor(color, for: .normal)
+                let attributedTitle = NSAttributedString(string: action.title ?? "", attributes: [NSAttributedStringKey.font: UIFont.systemFont(ofSize: 17, weight: .semibold),
+                                                                                            .foregroundColor: action.style == .destructive ? GreatAlertController.destructiveButtonColor : GreatAlertController.buttonColor])
+                newButton.setAttributedTitle(attributedTitle, for: .normal)
                 let selector: Selector
                 switch action.style {
                 case .cancel:
@@ -215,13 +218,14 @@ class GreatAlertController: UIViewController {
         default:
             return
         }
-        guard let indexo = index else { return }
-        onConfirmSelect?(indexo)
+        if let indexo = index {
+            confirmHandler?(indexo)
+        }
         dismissAction()
     }
 
     @objc private func destructivePressed() {
-        onDestructSelect?()
+        destructiveHandler?()
         dismissAction()
     }
 
@@ -238,13 +242,15 @@ class GreatAlertController: UIViewController {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        super.touchesBegan(touches, with: event)
-        guard let first = touches.first else {
-            return
-        }
-        let location = first.location(in: view)
-        if !alertView.frame.contains(location) {
-            dismissAction()
+        if GreatAlertController.backgroundTouchShouldClose {
+            super.touchesBegan(touches, with: event)
+            guard let first = touches.first else {
+                return
+            }
+            let location = first.location(in: view)
+            if !alertView.frame.contains(location) {
+                dismissAction()
+            }
         }
     }
 
@@ -259,8 +265,9 @@ extension GreatAlertController: UIPickerViewDelegate, UIPickerViewDataSource {
         return data?[component].count ?? 0
     }
 
-    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
-        return data?[row]
+    func pickerView(_ pickerView: UIPickerView, attributedTitleForRow row: Int, forComponent component: Int) -> NSAttributedString? {
+        guard let text = data?[row] else { return nil }
+        return NSAttributedString(string: text, attributes: [NSAttributedStringKey.foregroundColor: GreatAlertController.textColor])
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
@@ -287,7 +294,6 @@ extension GreatAlertController: UITableViewDelegate, UITableViewDataSource {
 }
 
 extension GreatAlertController: UIViewControllerTransitioningDelegate {
-
     func animationController(forPresented presented: UIViewController,
                              presenting: UIViewController, source: UIViewController) -> UIViewControllerAnimatedTransitioning? {
         animator.transitionType = .present
@@ -298,17 +304,18 @@ extension GreatAlertController: UIViewControllerTransitioningDelegate {
         animator.transitionType = .dismiss
         return animator
     }
-
 }
 
 extension GreatAlertController {
     static var barStyle: UIBarStyle = .default
     static var textColor: UIColor = .black
     static var backgroundColor: UIColor = .groupTableViewBackground
-    static var destructiveButtonColor: UIColor = .red
-    static var buttonColor: UIColor = UIApplication.shared.keyWindow?.tintColor ?? .blue
+    static var destructiveButtonColor: UIColor = UIColor(red: 0.9176, green: 0.2902, blue: 0.2078, alpha: 1)
+    static var buttonColor: UIColor = UIColor(red: 0.1922, green: 0.4627, blue: 0.9608, alpha: 1)
     static var highlightedCellColor: UIColor = .darkGray
     static var borderColor: CGColor = UIColor.lightGray.cgColor
+    /// Choose whether touching outside the content view should dismiss the view
+    static var backgroundTouchShouldClose: Bool = true
 }
 
 extension UIView {
